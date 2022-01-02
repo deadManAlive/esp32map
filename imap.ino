@@ -7,7 +7,8 @@
 #include <time.h>
 #include <FS.h>
 #include <SPIFFS.h>
-
+#include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 
 #include "ESP32Ping.h"
 
@@ -22,6 +23,9 @@ const char* ssid     = "Mochi11";
 const char* password = "hanif123";
 
 const char* ntpserver = "pool.ntp.org";
+
+const char* servername = "https://maker.ifttt.com/trigger/new_wifi_device/with/key/biYKB5vkmXW1-pSDyQUGspzOrDTAIFFhRQ-thbm7Z5L";
+
 
 IPAddress localip;
 IPAddress localsm;
@@ -150,9 +154,14 @@ void setup() {
     Serial.println("");
 
     if(WiFi.status() == WL_CONNECTED){
+        WiFiClientSecure client;
+        HTTPClient http;
+
         uint32_t ugw = htonl(uint32_t(localgw));
         uint32_t uip = htonl(uint32_t(localip));
         uint32_t ubc = htonl(uint32_t(localbc));
+
+        String info = "";
 
         int devcount = 0;
         int testcount = 0;
@@ -194,7 +203,8 @@ void setup() {
                     Serial.print(" [NEW]");
                     ipadd(SPIFFS, "/user.txt", ipdx);
                     newdev++;
-                    String info = String(target) + " is a new device.";
+                    info += String(target);
+                    info += ";";
                 }
 
                 Serial.println("");
@@ -214,6 +224,18 @@ void setup() {
         Serial.println("Number of new devices: " + String(newdev));
 
         ipread(SPIFFS, "/user.txt");
+
+        client.setInsecure();
+        client.connect(servername, 443);
+
+        http.begin(client, servername);
+        http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+        String httpRequestData = "value1=" + info + "&value2=" + String(devcount) + "&value3=" + String(newdev);
+
+        int httpResponseCode = http.POST(httpRequestData);
+        Serial.println("HTTP Response code for webhook: " + String(httpResponseCode));
+
+        http.end();
 
         delay(5000);
 
