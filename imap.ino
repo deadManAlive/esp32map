@@ -1,37 +1,78 @@
 /*
-  Blink
+ * With this library an ESP8266 can ping a remote machine and know if it's reachable. 
+ * It provides some basic measurements on ping messages (avg response time).
+ */
 
-  Turns an LED on for one second, then off for one second, repeatedly.
+#include <WiFi.h>
+#include "ESP32Ping.h"
 
-  Most Arduinos have an on-board LED you can control. On the UNO, MEGA and ZERO
-  it is attached to digital pin 13, on MKR1000 on pin 6. LED_BUILTIN is set to
-  the correct LED pin independent of which board is used.
-  If you want to know what pin the on-board LED is connected to on your Arduino
-  model, check the Technical Specs of your board at:
-  https://www.arduino.cc/en/Main/Products
+#define PING_COUNT 4
 
-  modified 8 May 2014
-  by Scott Fitzgerald
-  modified 2 Sep 2016
-  by Arturo Guadalupi
-  modified 8 Sep 2016
-  by Colby Newman
+const char* ssid     = "Mochi11";
+const char* password = "hanif123";
 
-  This example code is in the public domain.
+IPAddress localip;
+IPAddress localsm;
+IPAddress localgw;
 
-  https://www.arduino.cc/en/Tutorial/BuiltInExamples/Blink
-*/
+int subadd = 0;
 
-// the setup function runs once when you press reset or power the board
 void setup() {
-  // initialize digital pin LED_BUILTIN as an output.
-  pinMode(LED_BUILTIN, OUTPUT);
+    Serial.begin(115200);
+    delay(10);
+
+    // We start by connecting to a WiFi network
+
+    Serial.println();
+    Serial.print("Connecting to WiFi");
+  
+    WiFi.begin(ssid, password);
+  
+    while(WiFi.status() != WL_CONNECTED) {
+        delay(1000);
+        Serial.print(".");
+    }
+
+    localip = WiFi.localIP();
+    localsm = WiFi.subnetMask();
+    localgw = WiFi.gatewayIP();
+
+    Serial.println();
+    Serial.println("WiFi Connected: " + String(ssid));
+    Serial.print("IP: ");
+    Serial.println(localip);
+    Serial.print("Gateway: ");
+    Serial.println(localgw);
+    Serial.print("Subnet mask: ");
+    Serial.println(localsm);
+    Serial.println("===|SCANNING|===");
 }
 
-// the loop function runs over and over again forever
 void loop() {
-  digitalWrite(LED_BUILTIN, HIGH);   // turn the LED on (HIGH is the voltage level)
-  delay(1000);                       // wait for a second
-  digitalWrite(LED_BUILTIN, LOW);    // turn the LED off by making the voltage LOW
-  delay(1000);                       // wait for a second
+    if(WiFi.status() == WL_CONNECTED && subadd <= 256){
+        IPAddress target(192, 168, 1, subadd);
+        Serial.print(String("192.168.1.") + subadd + String(" "));
+
+        unsigned long start = millis();
+        bool pret = Ping.ping(target, PING_COUNT);
+        unsigned long stop = millis();
+
+        if(pret){
+            Serial.print("succed ");
+        }
+        else{
+            Serial.print("failed ");
+        }
+
+        Serial.println(String(stop - start) + "ms");
+
+        subadd++;
+    }
+    else if(subadd > 256){
+        Serial.println("===|SCAN FINISHED|==");
+    }
+    else{
+        Serial.println("No Connection...");
+    }
+    delay(1000);
 }
