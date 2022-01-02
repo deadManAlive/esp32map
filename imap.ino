@@ -5,12 +5,17 @@
 
 #include <WiFi.h>
 #include <time.h>
+#include <FS.h>
+#include <SPIFFS.h>
+
 
 #include "ESP32Ping.h"
 
 #define PING_COUNT 1
 #define SLEEPDUR 5*60*1000000
 #define GMT_OFFSET 7*60*60
+#define SPIFFS_FORMAT_IF_FAILED true
+#define HEURISTIC true
 
 
 const char* ssid     = "Mochi11";
@@ -23,9 +28,8 @@ IPAddress localsm;
 IPAddress localgw;
 IPAddress localbc;
 
-RTC_DATA_ATTR int bootcount = 0;
+RTC_DATA_ATTR int bootcount = 2;
 int subadd = 0;
-bool justfinished = true;
 
 void printTimeStamp(){
     struct tm timeinfo;
@@ -36,16 +40,80 @@ void printTimeStamp(){
     Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
 }
 
+void ipadd(fs::FS &cstream, const char* path, uint32_t ip){
+    File file = cstream.open(path, FILE_APPEND);
+    
+    if(!file){
+        Serial.println("Error reading file");
+        return;  
+    }
+    
+    file.println(ip);
+    file.close();
+}
+
+void ipread(fs::FS &cstream, const char* path){
+    File file = cstream.open(path, FILE_READ);
+
+    if(!file){
+        Serial.println("Error reading file");
+        return;   
+    }
+
+    while(file.available()){
+        String addr = file.readStringUntil('\n');
+        addr.trim();
+        uint32_t ipaddr = strtoul(addr.c_str(), NULL, 10);
+        IPAddress cip(ntohl(ipaddr));
+        Serial.println(cip);
+    }
+
+    file.close();
+}
+
+bool ipexist(fs::FS &cstream, const char* path, IPAddress current){
+    File file = cstream.open(path, FILE_READ);
+
+    if(!file){
+        Serial.println("Error reading file");
+        return false;    
+    }
+
+    while(file.available()){
+        String addr = file.readStringUntil('\n');
+        addr.trim();
+        uint32_t ipaddr = strtoul(addr.c_str(), NULL, 10);
+        IPAddress cip(ntohl(ipaddr));
+        if(current == cip){
+            file.close();
+            return true;
+        }
+    }
+
+    file.close();
+    return false;
+}
+
+void callback(char *topic, byte *payload, unsigned int length){
+    Serial.println("Info sent");
+}
+
 void setup() {
     Serial.begin(115200);
-    delay(10);
+    delay(1000);
+
+    if(!SPIFFS.begin(SPIFFS_FORMAT_IF_FAILED)){
+        Serial.println("Error mounting SPIFFS! Restarting...");
+        ESP.restart();
+    }
 
     switch(esp_sleep_get_wakeup_cause()){
         case ESP_SLEEP_WAKEUP_TIMER:
-            Serial.println(String(bootcount) + "# boot to scan");
+            Serial.println(String(bootcount++) + "# Boot");
             break;
         default:
-            Serial.println("New boot");
+            Serial.println("New Boot");
+            SPIFFS.format();
     }
 
     esp_sleep_enable_timer_wakeup(SLEEPDUR);
@@ -81,16 +149,21 @@ void setup() {
     printTimeStamp();
     Serial.println("");
 
-
     if(WiFi.status() == WL_CONNECTED){
         uint32_t ugw = htonl(uint32_t(localgw));
         uint32_t uip = htonl(uint32_t(localip));
         uint32_t ubc = htonl(uint32_t(localbc));
 
         int devcount = 0;
+        int testcount = 0;
+        int newdev = 0;
 
-        for(uint32_t ipstart = ugw; ipstart <= ubc; ipstart++){
-            IPAddress target(ntohl(ipstart));
+        for(uint32_t ipdx = ugw; ipdx <= ubc; ipdx++){
+            if(HEURISTIC && testcount >= 20){
+                break;
+            }
+
+            IPAddress target(ntohl(ipdx));
             Serial.print(target);
 
             unsigned long tstart = millis();
@@ -105,28 +178,45 @@ void setup() {
             }
 
             Serial.print(String(tstop - tstart) + "ms ");
-            if(ipstart == ugw){
+            if(ipdx == ugw){
                 Serial.println("(gateway)");
             }
-            else if(ipstart == uip){
+            else if(ipdx == uip){
                 Serial.println("(self)");
             }
-            else if(ipstart == ubc){
+            else if(ipdx == ubc){
                 Serial.println("(broadcast)");
             }
             else if(pret){
-                Serial.println("<---");
+                Serial.print("<---");
+
+                if(!ipexist(SPIFFS, "/user.txt", target)){
+                    Serial.print(" [NEW]");
+                    ipadd(SPIFFS, "/user.txt", ipdx);
+                    newdev++;
+                    String info = String(target) + " is a new device.";
+                }
+
+                Serial.println("");
+
                 devcount++;
             }
             else{
                 Serial.println("");
             }
+
+            testcount++;
         }
 
         Serial.println("===|SCAN FINISHED|===");
         printTimeStamp();
-        Serial.println("Number of connected devices: " + String(devcount));
+        Serial.println("Number of connected devices this scan: " + String(devcount));
+        Serial.println("Number of new devices: " + String(newdev));
+
+        ipread(SPIFFS, "/user.txt");
+
         delay(5000);
+
         Serial.println("going sleep...");
         esp_deep_sleep_start();
     }
