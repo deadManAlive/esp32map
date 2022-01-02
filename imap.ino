@@ -4,14 +4,19 @@
  */
 
 #include <WiFi.h>
+#include <time.h>
+
 #include "ESP32Ping.h"
 
 #define PING_COUNT 1
 #define SLEEPDUR 5*60*1000000
+#define GMT_OFFSET 7*60*60
 
 
 const char* ssid     = "Mochi11";
 const char* password = "hanif123";
+
+const char* ntpserver = "pool.ntp.org";
 
 IPAddress localip;
 IPAddress localsm;
@@ -21,6 +26,15 @@ IPAddress localbc;
 RTC_DATA_ATTR int bootcount = 0;
 int subadd = 0;
 bool justfinished = true;
+
+void printTimeStamp(){
+    struct tm timeinfo;
+    if(!getLocalTime(&timeinfo)){
+        Serial.println("Failed to obtain time from ntp server: " + String(ntpserver));
+        return;
+    }
+    Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
+}
 
 void setup() {
     Serial.begin(115200);
@@ -46,6 +60,8 @@ void setup() {
         Serial.print(".");
     }
 
+    configTime(GMT_OFFSET, 0, ntpserver);
+
     localip = WiFi.localIP();
     localsm = WiFi.subnetMask();
     localgw = WiFi.gatewayIP();
@@ -62,11 +78,16 @@ void setup() {
     Serial.print("Broadcast: ");
     Serial.println(localbc);
     Serial.println("===|SCANNING|===");
+    printTimeStamp();
+    Serial.println("");
+
 
     if(WiFi.status() == WL_CONNECTED){
         uint32_t ugw = htonl(uint32_t(localgw));
         uint32_t uip = htonl(uint32_t(localip));
         uint32_t ubc = htonl(uint32_t(localbc));
+
+        int devcount = 0;
 
         for(uint32_t ipstart = ugw; ipstart <= ubc; ipstart++){
             IPAddress target(ntohl(ipstart));
@@ -95,6 +116,7 @@ void setup() {
             }
             else if(pret){
                 Serial.println("<---");
+                devcount++;
             }
             else{
                 Serial.println("");
@@ -102,6 +124,8 @@ void setup() {
         }
 
         Serial.println("===|SCAN FINISHED|===");
+        printTimeStamp();
+        Serial.println("Number of connected devices: " + String(devcount));
         delay(5000);
         Serial.println("going sleep...");
         esp_deep_sleep_start();

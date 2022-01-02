@@ -2,7 +2,7 @@
 - [ ] External interfacing
 - [ ] Multitasking/multithreading
 - [x] Deepsleep/watchdogs
-- [ ] Webserver/external API
-- [ ] Non-volatile storage
+- [O] Webserver/external API
+- [O] Non-volatile storage
 - [ ] PWM signal generator
 - [ ] BLE with mobile
